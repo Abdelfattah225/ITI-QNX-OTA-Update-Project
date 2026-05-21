@@ -71,23 +71,24 @@ mkdir -p "$DEMO_QUARANTINE"
 mv new_rootfs.ext4 new_rootfs.ext4.tmp new_rootfs.meta "$DEMO_QUARANTINE"/ 2>/dev/null || true
 ```
 
-Restart the SOME/IP client:
+Stop the old automatic apply service, then restart the SOME/IP client:
 
 ```sh
-/home/root/reset_someip_client.sh
+systemctl stop ota-apply.service
+systemctl restart someip-client.service
 ```
 
-Restart the OTA apply watcher:
-
-```sh
-systemctl restart ota-apply.service
-```
-
-Watch Linux logs:
+Watch the SOME/IP client log:
 
 ```sh
 journalctl -u someip-client.service -f
-journalctl -u ota-apply.service -f
+```
+
+After fetch completes:
+
+```sh
+ls -lh /home/root/rpi3-commonapi-package/new_rootfs.ext4
+cat /home/root/rpi3-commonapi-package/new_rootfs.meta
 ```
 
 ## PC
@@ -100,8 +101,9 @@ Expected demo sequence:
 ```text
 PC Qt app sends image
 QNX receiver validates and writes /tmp/rootfs/rootfs.ext4 + rootfs.meta
-QNX SOME/IP server detects a new stable image
-Linux SOME/IP client receives new_rootfs.ext4
-Linux ota-apply verifies metadata and writes the inactive partition
-Linux updates boot cmdline and reboots
+QNX SOME/IP server notifies Linux with RequestDownload
+Linux SOME/IP client runs /home/root/scp_ota_fetch.sh
+Linux fetch script pulls new_rootfs.ext4 by SCP
+User runs /home/root/apply_ota_manual.sh
+User runs reboot manually
 ```

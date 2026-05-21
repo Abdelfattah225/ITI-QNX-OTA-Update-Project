@@ -17,8 +17,10 @@ This folder contains helper scripts used by the OTA project.
 | `qnx/qnx_log_poll_receiver.sh` | QNX | Poll the receiver log without using `tail -f` |
 | `qnx/qnx_log_poll_server.sh` | QNX | Poll the SOME/IP server log without using `tail -f` |
 | `linux/install_someip_client_service.sh` | Linux/RPi3 | Install and start the SOME/IP client systemd service |
-| `linux/install_ota_apply_service.sh` | Linux/RPi3 | Install and start the OTA apply watcher service |
-| `linux/ota_apply_watcher.sh` | Linux/RPi3 | Validate and apply a received rootfs image to the inactive slot |
+| `linux/scp_ota_fetch.sh` | Linux/RPi3 | Fetch `rootfs.meta` and `rootfs.ext4` from QNX by SCP |
+| `linux/apply_ota_manual.sh` | Linux/RPi3 | Manually apply the fetched image to the inactive slot |
+| `linux/install_ota_apply_service.sh` | Linux/RPi3 | Legacy automatic watcher installer; not used in final demo |
+| `linux/ota_apply_watcher.sh` | Linux/RPi3 | Legacy automatic watcher; stop `ota-apply.service` for final demo |
 | `linux/reset_someip_client.sh` | Linux/RPi3 | Recover a stuck SOME/IP client process/service |
 | `linux/watch_someip_client_log.sh` | Linux/RPi3 | Follow the SOME/IP client journal |
 | `linux/watch_ota_apply_log.sh` | Linux/RPi3 | Follow the OTA apply journal |
@@ -27,11 +29,31 @@ This folder contains helper scripts used by the OTA project.
 
 ## Notes
 
+The final working flow is manual after fetch:
+
+```sh
+systemctl stop ota-apply.service
+systemctl restart someip-client.service
+```
+
+When the CommonAPI client detects an update, it runs:
+
+```text
+/home/root/scp_ota_fetch.sh
+```
+
+The operator later runs:
+
+```sh
+/home/root/apply_ota_manual.sh
+reboot
+```
+
 The real runtime scripts are copied to the QNX target under:
 
 ```text
 /data/var/tmp/
-````
+```
 
 The QNX startup file is:
 

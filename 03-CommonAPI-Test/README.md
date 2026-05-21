@@ -1,27 +1,24 @@
-# CommonAPI/SOME-IP Transfer
+# CommonAPI/SOME-IP Control Channel
 
-This component moves the verified rootfs image from QNX to the Linux/RPi3 target.
-It is the middle stage of the OTA demo after the PC Qt app has delivered an
-image to the QNX receiver.
-
-```text
-QNX /tmp/rootfs/rootfs.ext4
-  -> CommonAPI/SOME-IP server on 192.168.50.1
-  -> CommonAPI/SOME-IP client on 192.168.50.2
-  -> /home/root/rpi3-commonapi-package/new_rootfs.ext4
-```
+This component provides the CommonAPI/SOME-IP control channel for the OTA demo.
+It does not move the rootfs image in the final flow.
 
 ## Runtime Behavior
 
-- `src/server.cpp` monitors `/tmp/rootfs/rootfs.ext4`.
-- The server uses a fast fingerprint from file size and mtime to detect a new
-  stable image.
-- The server streams chunks from disk in `RequestData`; it does not preload the
-  full rootfs image into RAM.
-- `src/client.cpp` polls the service and writes to `new_rootfs.ext4.tmp`.
-- After a complete transfer, the client renames the temp file to
-  `new_rootfs.ext4`.
-- The Linux OTA watcher validates `new_rootfs.ext4` using `rootfs.meta` from QNX.
+- `src/server.cpp` monitors `/tmp/rootfs/rootfs.ext4` and reports that firmware
+  is available.
+- `src/client.cpp` calls `RequestDownload()`.
+- If no update is ready, the client prints `No new firmware ready yet`.
+- If an update is ready, the client runs `/home/root/scp_ota_fetch.sh`.
+- The rootfs image is fetched by SCP/SSH, not by CommonAPI.
+
+Expected client logs when an update is ready:
+
+```text
+[Client] Firmware notification received
+[Client] CommonAPI is control-only; image transfer is done by SCP
+[Client] Running fetch script
+```
 
 ## Network
 
@@ -30,19 +27,7 @@ QNX /tmp/rootfs/rootfs.ext4
 | QNX server | `192.168.50.1` |
 | Linux/RPi3 client | `192.168.50.2` |
 
-The current demo mode uses static routing with UDP/unreliable SOME/IP methods.
-Keep data chunks around `1024` bytes unless the transport is redesigned.
-
-## Interface Notes
-
-`fidl/someipBL.fidl` must define the payload as bytes:
-
-```fidl
-array ByteArray of UInt8
-```
-
-Using `UInt32` for the byte array expands every byte to four bytes and caused
-vSomeIP UDP messages to exceed the configured maximum message size.
+The checked-in configs use static routing for the demo.
 
 ## Build Notes
 

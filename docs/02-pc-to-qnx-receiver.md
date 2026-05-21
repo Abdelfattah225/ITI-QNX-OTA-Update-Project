@@ -48,8 +48,8 @@ SHA256=<sha256>
 RECEIVED_AT=<unix_timestamp>
 ```
 
-The Linux watcher later pulls this file from QNX and treats it as the integrity
-contract for the SOME/IP transfer.
+The Linux fetch/apply flow later pulls this file from QNX and treats it as the
+metadata contract for SCP fetch and manual apply.
 
 ## QNX Build
 
@@ -83,5 +83,5 @@ The receiver rejects the transfer if:
 - the calculated SHA-256 does not match `SHA256`;
 - the image or metadata cannot be moved into `/tmp/rootfs`.
 
-After a valid upload, the CommonAPI/SOME-IP server detects the updated
-`/tmp/rootfs/rootfs.ext4` file and makes it available to the Linux client.
+After a valid upload, the CommonAPI/SOME/IP server detects that an update is
+available and notifies the Linux client. The image itself is fetched by SCP.

@@ -1,54 +1,56 @@
 # OTA Architecture
 
-The project demonstrates an A/B rootfs OTA update across three machines:
+The final OTA flow separates control from data transfer:
 
-- PC: Qt/QML manager app used by the operator.
-- QNX/RPi5: receiver, validator, metadata store, and SOME/IP server.
-- Linux/RPi3: SOME/IP client and A/B rootfs apply agent.
+- CommonAPI/SOME-IP is only a control and notification channel.
+- SCP/SSH transfers the large rootfs image.
+- The user applies the update and reboots manually.
 
-## End-to-End Flow
+## Full Flow
 
 ```text
 PC Qt App
   |
   | TCP port 8080
-  | header: UUID|SIZE|SHA256\n
+  | UUID, SIZE, SHA256, rootfs.ext4
   v
 QNX Receiver
   |
-  | validates SHA-256
+  | verifies SHA256
   | writes /tmp/rootfs/rootfs.ext4
   | writes /tmp/rootfs/rootfs.meta
   v
 QNX CommonAPI/SOME-IP Server
   |
-  | UDP/static routing
-  | streams rootfs chunks from disk
+  | RequestDownload notification/control only
   v
 Linux/RPi3 CommonAPI Client
   |
-  | writes new_rootfs.ext4.tmp
-  | renames to new_rootfs.ext4
+  | if RequestDownload=false:
+  |   print "No new firmware ready yet"
+  | if RequestDownload=true:
+  |   run /home/root/scp_ota_fetch.sh
   v
-Linux ota-apply watcher
+Linux SCP Fetch
   |
-  | pulls rootfs.meta from QNX
-  | verifies SIZE, SHA256, UUID
-  | mounts image read-only and checks rootfs shape
-  | detects active rootfs from /proc/cmdline
-  | writes inactive partition with dd
-  | updates boot cmdline
+  | pulls rootfs.meta and rootfs.ext4 from QNX
+  | writes new_rootfs.ext4.tmp first
+  | renames to new_rootfs.ext4 after SCP succeeds
   v
-Linux/RPi3 reboot into updated rootfs
+Manual Linux Apply
+  |
+  | verifies SIZE and UUID
+  | detects active root from /proc/cmdline
+  | writes inactive rootfs partition with dd
+  | switches /boot/cmdline.txt
+  | writes /boot/ota_status.env
+  v
+Manual Reboot
+  |
+  | user runs reboot
+  v
+Linux boots from updated rootfs
 ```
-
-## Network
-
-| Link | Source | Destination | Notes |
-| --- | --- | --- | --- |
-| PC to QNX | PC Qt app | QNX `192.168.50.1:8080` | TCP image upload |
-| QNX to Linux | QNX `192.168.50.1` | Linux/RPi3 `192.168.50.2` | CommonAPI/SOME-IP |
-| Linux to QNX | Linux root | QNX root | `scp` pulls `/tmp/rootfs/rootfs.meta` |
 
 ## Storage Contract
 
@@ -59,32 +61,44 @@ QNX receiver output:
 /tmp/rootfs/rootfs.meta
 ```
 
-Linux SOME/IP client output:
+Linux fetch output:
 
 ```text
+/home/root/rpi3-commonapi-package/new_rootfs.meta
 /home/root/rpi3-commonapi-package/new_rootfs.ext4.tmp
 /home/root/rpi3-commonapi-package/new_rootfs.ext4
 ```
 
-Linux OTA watcher output:
-
-```text
-/home/root/rpi3-commonapi-package/new_rootfs.meta
-/home/root/rpi3-commonapi-package/ota_status.env
-```
-
-## A/B Deployment Contract
-
-Expected Linux SD card layout:
+## A/B Partition Layout
 
 ```text
 /dev/mmcblk0p1 -> boot
-/dev/mmcblk0p2 -> rootfs A
-/dev/mmcblk0p3 -> rootfs B
+/dev/mmcblk0p2 -> rootfs_A
+/dev/mmcblk0p3 -> rootfs_B
 ```
 
-If `/proc/cmdline` says the active root is `/dev/mmcblk0p2`, the watcher writes
-`/dev/mmcblk0p3`. If the active root is `/dev/mmcblk0p3`, the watcher writes
-`/dev/mmcblk0p2`.
+Apply rule:
 
-The watcher never intentionally writes the active rootfs partition.
+| Active root from `/proc/cmdline` | Inactive root written |
+| --- | --- |
+| `/dev/mmcblk0p2` | `/dev/mmcblk0p3` |
+| `/dev/mmcblk0p3` | `/dev/mmcblk0p2` |
+
+The apply script rejects any other active root instead of guessing.
+
+## Boot Files
+
+```text
+/boot/cmdline_A.txt -> root=/dev/mmcblk0p2
+/boot/cmdline_B.txt -> root=/dev/mmcblk0p3
+/boot/cmdline.txt   -> actual Raspberry Pi boot file
+```
+
+If the matching `cmdline_A.txt` or `cmdline_B.txt` exists, the apply script uses
+it. Otherwise it edits the `root=` value in `/boot/cmdline.txt`.
+
+## Design Decision
+
+CommonAPI `RequestData` chunk transfer was too slow and unstable for 1.5 GB
+rootfs images. The final demo therefore uses CommonAPI/SOME-IP only to notify
+Linux that an update is available, and uses SCP/SSH for the large file transfer.

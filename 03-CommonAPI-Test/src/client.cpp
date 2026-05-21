@@ -1,32 +1,17 @@
 #include <CommonAPI/CommonAPI.hpp>
 
 #include <chrono>
-#include <cstdio>
-#include <cstdint>
-#include <fstream>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <string>
 #include <thread>
-#include <vector>
 
 #include <v1/abdelfattah/examples/SomeIPBlProxy.hpp>
 
-static uint32_t calculateAdditiveChecksum(uint32_t current,
-                                          const std::vector<uint8_t> &data)
-{
-    for (uint8_t byte : data)
-    {
-        current += byte;
-    }
-
-    return current;
-}
-
-static bool downloadOnce(std::shared_ptr<v1::abdelfattah::examples::SomeIPBlProxy<>> proxy)
+static bool pollOnce(std::shared_ptr<v1::abdelfattah::examples::SomeIPBlProxy<>> proxy)
 {
     std::cout << "[Client] Checking for available firmware..." << std::endl;
-    std::cout << "[Client] Starting download attempt..." << std::endl;
 
     CommonAPI::CallStatus callStatus;
     bool downloadResult = false;
@@ -42,109 +27,24 @@ static bool downloadOnce(std::shared_ptr<v1::abdelfattah::examples::SomeIPBlProx
 
     if (!downloadResult)
     {
-        std::cout << "[Client] No new firmware ready yet." << std::endl;
+        std::cout << "[Client] No new firmware ready yet" << std::endl;
+        return true;
+    }
+
+    std::cout << "[Client] Firmware notification received" << std::endl;
+    std::cout << "[Client] CommonAPI is control-only; image transfer is done by SCP" << std::endl;
+    std::cout << "[Client] Running fetch script" << std::endl;
+
+    const int fetchStatus = std::system("/home/root/scp_ota_fetch.sh");
+
+    if (fetchStatus != 0)
+    {
+        std::cerr << "[Client] ERROR: Fetch script failed with status: "
+                  << fetchStatus << std::endl;
         return false;
     }
 
-    std::cout << "[Client] RequestDownload result: SUCCESS" << std::endl;
-
-    const std::string tmpFilename = "new_rootfs.ext4.tmp";
-    const std::string finalFilename = "new_rootfs.ext4";
-
-    std::remove(tmpFilename.c_str());
-
-    std::ofstream outputFile(tmpFilename, std::ios::binary);
-
-    if (!outputFile.is_open())
-    {
-        std::cerr << "[Client] ERROR: Failed to open temp output file: "
-                  << tmpFilename << std::endl;
-        return false;
-    }
-
-    const uint32_t chunkSize = 1024;
-
-    bool transferComplete = false;
-    bool transferFailed = false;
-    uint64_t totalReceived = 0;
-    uint32_t calculatedChecksum = 0;
-    uint32_t chunkCount = 0;
-
-    std::cout << "[Client] Starting data transfer..." << std::endl;
-
-    while (!transferComplete)
-    {
-        ++chunkCount;
-
-        v1::abdelfattah::examples::SomeIPBl::ByteArray data;
-        proxy->RequestData(chunkSize, callStatus, data);
-
-        if (callStatus != CommonAPI::CallStatus::SUCCESS)
-        {
-            std::cerr << "[Client] RequestData call failed with status: "
-                      << static_cast<int>(callStatus) << std::endl;
-
-            transferFailed = true;
-            break;
-        }
-
-        if (data.empty())
-        {
-            std::cout << "[Client] Received completion indicator" << std::endl;
-            transferComplete = true;
-            break;
-        }
-
-        outputFile.write(reinterpret_cast<const char *>(data.data()),
-                         static_cast<std::streamsize>(data.size()));
-
-        if (!outputFile.good())
-        {
-            std::cerr << "[Client] ERROR: Failed while writing temp file" << std::endl;
-            transferFailed = true;
-            break;
-        }
-
-        calculatedChecksum = calculateAdditiveChecksum(calculatedChecksum, data);
-        totalReceived += data.size();
-
-        if (chunkCount % 100 == 0)
-        {
-            std::cout << "[Client] Requesting chunk " << chunkCount
-                      << " (" << chunkSize << " bytes)..." << std::endl;
-            std::cout << "[Client] Total received: "
-                      << totalReceived << " bytes" << std::endl;
-        }
-    }
-
-    outputFile.close();
-
-    if (transferFailed || !transferComplete || totalReceived == 0)
-    {
-        std::cerr << "[Client] Transfer failed or incomplete. Removing temp file." << std::endl;
-        std::remove(tmpFilename.c_str());
-        return false;
-    }
-
-    std::cout << "[Client] Transfer complete! Total received: "
-              << totalReceived << " bytes" << std::endl;
-
-    std::cout << "[Client] Calculated additive checksum: "
-              << calculatedChecksum << std::endl;
-
-    std::remove(finalFilename.c_str());
-
-    if (std::rename(tmpFilename.c_str(), finalFilename.c_str()) != 0)
-    {
-        std::cerr << "[Client] ERROR: Failed to rename "
-                  << tmpFilename << " to " << finalFilename << std::endl;
-
-        std::remove(tmpFilename.c_str());
-        return false;
-    }
-
-    std::cout << "[Client] Data saved to: " << finalFilename << std::endl;
-    std::cout << "[Client] Firmware downloaded successfully." << std::endl;
+    std::cout << "[Client] Fetch script completed successfully" << std::endl;
     std::cout << "[Client] OTA agent is still running, waiting for next update..." << std::endl;
 
     return true;
@@ -197,7 +97,7 @@ int main()
 
     while (true)
     {
-        bool ok = downloadOnce(proxy);
+        bool ok = pollOnce(proxy);
 
         if (ok)
         {

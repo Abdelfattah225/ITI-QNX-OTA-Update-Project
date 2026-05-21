@@ -23,6 +23,7 @@ This folder contains helper scripts used by the OTA project.
 | `linux/watch_someip_client_log.sh` | Linux/RPi3 | Follow the SOME/IP client journal |
 | `linux/watch_ota_apply_log.sh` | Linux/RPi3 | Follow the OTA apply journal |
 | `linux/check_boot_slot.sh` | Linux/RPi3 | Print current boot/rootfs slot details |
+| `demo/demo_clean_start.md` | Operator | Clean-start checklist for a repeatable demo |
 
 ## Notes
 

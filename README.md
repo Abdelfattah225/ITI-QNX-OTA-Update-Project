@@ -1,323 +1,104 @@
+# ITI QNX OTA Update Project
 
-# QNX OTA Update Project
+This repository contains a demo-ready A/B OTA update pipeline between a PC Qt
+manager app, a QNX target, and a Linux/RPi3 target.
 
-This project demonstrates a simple OTA update flow between a PC, a QNX target, and a Linux target.
+The PC sends a rootfs image to QNX over TCP. QNX validates the payload and stores
+metadata, then a CommonAPI/SOME-IP server streams the rootfs image to Linux. The
+Linux OTA watcher verifies metadata, writes the inactive rootfs partition,
+updates the boot cmdline, and reboots into the updated slot.
 
-## Current Flow
+## Architecture
 
 ```text
 PC Qt App
-   |
-   | TCP port 8080
-   v
-QNX OTA Receiver
-   |
-   | SHA-256 verification
-   v
-QNX stores verified rootfs image
-````
+  -> TCP :8080
+QNX Receiver
+  -> /tmp/rootfs/rootfs.ext4
+  -> /tmp/rootfs/rootfs.meta
+QNX CommonAPI/SOME-IP Server
+  -> UDP/static routing
+Linux/RPi3 CommonAPI Client
+  -> /home/root/rpi3-commonapi-package/new_rootfs.ext4
+Linux ota-apply watcher
+  -> verify SIZE/SHA256/UUID and rootfs shape
+  -> dd image to inactive rootfs partition
+  -> update cmdline.ext or cmdline.txt
+  -> reboot
+```
 
+Static demo addresses:
+
+| Target | IP |
+| --- | --- |
+| QNX | `192.168.50.1` |
+| Linux/RPi3 | `192.168.50.2` |
+
+## Quick Demo Flow
+
+1. Start QNX networking, receiver, and SOME/IP server.
+2. Start Linux `someip-client.service` and `ota-apply.service`.
+3. Send a prepared ext4 rootfs image from the PC Qt app to QNX.
+4. Confirm QNX writes `/tmp/rootfs/rootfs.ext4` and `/tmp/rootfs/rootfs.meta`.
+5. Watch Linux receive `new_rootfs.ext4`.
+6. Watch `ota-apply` verify the image and write the inactive rootfs slot.
+7. Linux reboots into the updated rootfs.
+
+Useful runbooks:
+
+- [Demo clean start](scripts/demo/demo_clean_start.md)
+- [Demo recording guide](docs/07-demo-recording-guide.md)
+- [Troubleshooting](docs/06-troubleshooting.md)
 
 ## Repository Structure
 
 ```text
-OTA-Hypervisor-Update/
-├── 01-PC-Manager-App/
-├── 02-QNX-OTA-Receiver-Daemon/
-├── docs/
-├── scripts/
-└── README.md
+01-PC-Manager-App/              PC Qt/QML sender
+02-QNX-OTA-Receiver-Daemon/     QNX TCP receiver
+03-CommonAPI-Test/              CommonAPI/SOME-IP server and client source
+docs/                           Architecture, deployment, and demo notes
+scripts/qnx/                    QNX build, restart, reset, and log helpers
+scripts/linux/                  Linux service, watcher, reset, and check helpers
+scripts/demo/                   Demo preparation checklist
 ```
 
-## Components
+## Safety Warning
 
-| Component                    | Description                                                   |
-| ---------------------------- | ------------------------------------------------------------- |
-| `01-PC-Manager-App`          | Qt/QML desktop app used to send a rootfs image from PC to QNX |
-| `02-QNX-OTA-Receiver-Daemon` | QNX TCP receiver daemon that receives and verifies the image  |
-| `docs/`                      | Simple documentation for each project stage                   |
-| `scripts/`                   | Startup and helper scripts                                    |
-
-## Network Setup
-
-| Device     | Interface | IP                        |
-| ---------- | --------- | ------------------------- |
-| PC         | Wi-Fi/LAN | Same network as QNX Wi-Fi |
-| QNX/RPi5   | `bcm0`    | `10.153.186.164`          |
-| QNX/RPi5   | `cgem0`   | `192.168.50.1`            |
-| Linux/RPi3 | `eth0`    | `192.168.50.2`            |
-
-## Current Status
-
-Done:
-
-* PC Qt app sends a rootfs image to QNX.
-* QNX receiver receives the image on TCP port `8080`.
-* QNX receiver verifies SHA-256.
-* QNX receiver stores the verified image.
-* QNX receiver auto-starts after boot.
-* QNX network setup auto-starts after boot.
-* Linux SD card has A/B rootfs partitions prepared.
-* Qt demo apps are prepared for RootFS A and RootFS B.
-
-Next:
-
-* Start QNX CommonAPI server automatically.
-* Send the verified image from QNX to Linux using CommonAPI.
-* Let Linux verify and flash the image to the inactive partition.
-* Switch boot target and reboot into the updated rootfs.
-
-````
-
-
-## `docs/02-qnx-network-autostart.md`
-
-```md
-
----
-
----
-
-## `docs/04-linux-ab-rootfs.md`
-
-```md
-# Linux A/B RootFS Setup
-
-## Purpose
-
-The Linux target needs two rootfs partitions.
-
-This allows OTA updates to be written to the inactive partition while Linux is running from the active partition.
-
-## Partition Layout
-
-The Linux SD card is prepared like this:
-
-```text
-/dev/mmcblk0p1 -> boot
-/dev/mmcblk0p2 -> rootfs_A
-/dev/mmcblk0p3 -> rootfs_B
-````
-
-## Boot Files
-
-The boot partition contains:
-
-```text
-/boot/cmdline.txt
-/boot/cmdline_A.txt
-/boot/cmdline_B.txt
-```
-
-## RootFS A
-
-```text
-/boot/cmdline_A.txt
-```
-
-contains:
-
-```text
-root=/dev/mmcblk0p2
-```
-
-## RootFS B
-
-```text
-/boot/cmdline_B.txt
-```
-
-contains:
-
-```text
-root=/dev/mmcblk0p3
-```
-
-## Switching Boot Target
-
-To boot from RootFS A:
-
-```sh
-cp /boot/cmdline_A.txt /boot/cmdline.txt
-sync
-```
-
-To boot from RootFS B:
-
-```sh
-cp /boot/cmdline_B.txt /boot/cmdline.txt
-sync
-```
-
-## Verification
-
-After booting Linux, run:
+The Linux OTA watcher uses `dd` to write a rootfs image to the inactive
+partition. Confirm the active rootfs before running a real apply:
 
 ```sh
 cat /proc/cmdline
-mount | grep ' / '
+mount | grep " / "
+blkid
 ```
 
-Example when booted from RootFS B:
-
-```text
-root=/dev/mmcblk0p3
-/dev/mmcblk0p3 on / type ext4
-```
-
-## OTA Logic
-
-If Linux is running from `p2`, the inactive partition is `p3`.
-
-```text
-active   = /dev/mmcblk0p2
-inactive = /dev/mmcblk0p3
-```
-
-If Linux is running from `p3`, the inactive partition is `p2`.
-
-```text
-active   = /dev/mmcblk0p3
-inactive = /dev/mmcblk0p2
-```
-
-The update image must always be written to the inactive partition.
-
-````
-
----
-
-## `docs/05-current-status.md`
-
-```md
-# Current Project Status
-
-## Done
-
-### PC to QNX
-
-- Qt/QML PC app sends rootfs image to QNX.
-- QNX receiver accepts TCP connection on port `8080`.
-- Header format is working:
-
-```text
-UUID|SIZE|SHA256
-````
-
-* QNX receiver receives the full image.
-* QNX receiver verifies SHA-256 successfully.
-* QNX receiver stores the verified image.
-
-### QNX Auto-Start
-
-* QNX network setup starts automatically.
-* QNX receiver starts automatically.
-* Wi-Fi gets static IP.
-* Ethernet gets static IP.
-
-Current QNX IPs:
-
-```text
-bcm0  -> 10.153.186.164
-cgem0 -> 192.168.50.1
-```
-
-### Linux A/B RootFS
-
-Linux SD card has A/B rootfs partitions:
+Expected A/B layout:
 
 ```text
 /dev/mmcblk0p1 -> boot
-/dev/mmcblk0p2 -> rootfs_A
-/dev/mmcblk0p3 -> rootfs_B
+/dev/mmcblk0p2 -> rootfs A
+/dev/mmcblk0p3 -> rootfs B
 ```
 
-Boot switching is done using:
+If Linux boots from `/dev/mmcblk0p2`, OTA writes `/dev/mmcblk0p3`. If Linux boots
+from `/dev/mmcblk0p3`, OTA writes `/dev/mmcblk0p2`.
 
-```text
-/boot/cmdline_A.txt
-/boot/cmdline_B.txt
-/boot/cmdline.txt
-```
+## Current Limitations
 
-### Qt Demo Apps
+- SOME/IP transfer currently uses UDP/static routing with small chunks around
+  `1024` bytes.
+- The QNX server streams from disk, but transfer speed is intentionally
+  conservative for demo stability.
+- Rollback after a failed boot is not implemented yet.
+- Metadata validates size, SHA-256, UUID, and rootfs shape, but not a signature.
+- The Qt app does not yet show end-to-end Linux apply progress.
 
-Both rootfs partitions use the same systemd service:
+## TODO
 
-```text
-qt-app.service
-```
-
-The service runs:
-
-```text
-/usr/bin/appTask02_Basic_Calculator
-```
-
-RootFS A and RootFS B contain different Qt/QML app versions.
-This makes the update result visible after reboot.
-
-## Current Working Flow
-
-```text
-PC Qt App
-   |
-   | TCP 8080
-   v
-QNX Receiver
-   |
-   | SHA-256 verification
-   v
-/tmp/rootfs/rootfs.ext4
-```
-
-## Next Steps
-
-1. Start QNX CommonAPI server automatically.
-2. Make QNX CommonAPI server read the verified rootfs image.
-3. Make Linux CommonAPI client pull the image from QNX.
-4. Make Linux verify SHA-256 and UUID.
-5. Make Linux flash the image to the inactive partition.
-6. Switch `/boot/cmdline.txt`.
-7. Reboot and verify the updated Qt app.
-
-````
-
----
-
-## `scripts/README.md`
-
-```md
-# Scripts
-
-This folder contains helper scripts used by the OTA project.
-
-## Scripts
-
-| Script | Target | Purpose |
-|---|---|---|
-| `start_network_ota.sh` | QNX | Configure QNX network interfaces after boot |
-| `qnx-post-startup-snippet.sh` | QNX | Shows what should be added to QNX `post_startup.sh` |
-
-## Notes
-
-The real runtime scripts are copied to the QNX target under:
-
-```text
-/data/var/tmp/
-````
-
-The QNX startup file is:
-
-```text
-/usr/etc/startup/post_startup.sh
-```
-
-Startup commands must be added before:
-
-```sh
-exit 0
-```
-
-```
-```
+- Add rollback if the updated partition fails to boot.
+- Improve speed using TCP/reliable or safe larger chunks.
+- Add version number to metadata.
+- Add signature verification.
+- Add progress percent to the Qt app.
+- Add health status reporting.

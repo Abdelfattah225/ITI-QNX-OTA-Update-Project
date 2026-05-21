@@ -1,0 +1,32 @@
+import "platform:/plugin/org.genivi.commonapi.someip/deployment/CommonAPI-4-SOMEIP_deployment_spec.fdepl"
+import "someipBL.fidl"
+
+define org.genivi.commonapi.someip.deployment for interface abdelfattah.examples.SomeIPBl {
+    SomeIpServiceID = 4660
+
+    method RequestDownload {
+        SomeIpMethodID = 0x0001
+        SomeIpReliable = false
+    }
+    method RequestData {
+        SomeIpMethodID = 0x0002
+        SomeIpReliable = false
+    }
+    
+    broadcast FirmwareAvailable {
+        SomeIpEventID = 0x8001
+        SomeIpEventGroups = { 1 }
+    }
+}
+
+define org.genivi.commonapi.someip.deployment for provider as Service {
+    instance abdelfattah.examples.SomeIPBl {
+        InstanceId = "abdelfattah.examples.SomeIPBl"
+        
+        SomeIpInstanceID = 0x0001
+    
+        SomeIpUnicastAddress = "192.168.50.1"
+        SomeIpReliableUnicastPort = 30499
+        SomeIpUnreliableUnicastPort = 30499
+    }
+}

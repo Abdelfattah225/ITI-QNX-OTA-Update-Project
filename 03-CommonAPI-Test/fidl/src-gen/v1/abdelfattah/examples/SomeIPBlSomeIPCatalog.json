@@ -1,0 +1,8 @@
+{
+    "abdelfattah.examples.SomeIPBl" : {
+        "service_id": 4660,
+        "instances" : {
+            "abdelfattah.examples.SomeIPBl": 1
+        }
+    }
+}

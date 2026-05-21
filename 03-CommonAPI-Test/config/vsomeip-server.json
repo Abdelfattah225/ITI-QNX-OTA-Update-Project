@@ -1,0 +1,43 @@
+{
+    "unicast": "192.168.50.1",
+    "netmask": "255.255.255.0",
+    "logging": {
+        "level": "info",
+        "console": "true",
+        "file": {
+            "enable": "false"
+        },
+        "dlt": "false"
+    },
+    "applications": [
+        {
+            "name": "routing_manager",
+            "id": "0x1001"
+        }
+    ],
+    "services": [
+        {
+            "service": "0x1234",
+            "instance": "0x0001",
+            "reliable": {
+                "port": "30501",
+                "enable-magic-cookies": "false"
+            },
+            "unreliable": "30499",
+            "eventgroups": [
+                {
+                    "eventgroup": "0x0001",
+                    "events": [
+                        {
+                            "event": "0x8001"
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "routing": "routing_manager",
+    "service-discovery": {
+        "enable": "false"
+    }
+}

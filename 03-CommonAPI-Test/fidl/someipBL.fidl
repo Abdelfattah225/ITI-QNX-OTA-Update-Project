@@ -1,0 +1,32 @@
+package abdelfattah.examples
+
+interface SomeIPBl {
+  version { major 1 minor 0 }
+  
+  array ByteArray of UInt8
+  
+  broadcast FirmwareAvailable {
+    out {
+      UInt32 fileSize
+      UInt32 checksum
+    }
+  }
+  
+  method RequestDownload {
+    in {
+    }
+    out {
+      Boolean result
+    }
+  }
+  
+  method RequestData {
+    in {
+      UInt32 NoOfBytes
+    }
+    out {
+      ByteArray message
+    }
+  }
+}
+

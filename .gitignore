@@ -1,0 +1,33 @@
+# Build outputs
+build/
+build-*/
+CMakeFiles/
+CMakeCache.txt
+Makefile
+cmake_install.cmake
+*.o
+
+# Temporary and generated OTA payloads
+*.tmp
+*.log
+*.ext4
+received_firmware.bin
+new_rootfs.ext4
+new_rootfs.ext4.tmp
+rootfs.ext4
+served_state.txt
+firmware.bin
+
+# Runtime binaries and packaged libraries
+receiver
+SomeIPBlClient
+SomeIPBlServer
+udp_mcast_test
+03-CommonAPI-Test/qnx-server-package/bin/
+03-CommonAPI-Test/qnx-server-package/libs/
+03-CommonAPI-Test/rpi-package/
+03-CommonAPI-Test/rpi3-commonapi-package/bin/
+03-CommonAPI-Test/rpi3-commonapi-package/lib/
+
+# IDE/editor files
+.vscode/

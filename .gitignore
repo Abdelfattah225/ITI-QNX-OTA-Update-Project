@@ -11,6 +11,8 @@ cmake_install.cmake
 *.tmp
 *.log
 *.ext4
+*.bin
+*.img
 received_firmware.bin
 new_rootfs.ext4
 new_rootfs.ext4.tmp

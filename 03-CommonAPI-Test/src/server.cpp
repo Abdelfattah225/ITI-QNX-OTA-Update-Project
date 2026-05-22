@@ -1,6 +1,5 @@
 #include <CommonAPI/CommonAPI.hpp>
 
-#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <fstream>
@@ -10,7 +9,6 @@
 #include <sstream>
 #include <string>
 #include <thread>
-#include <vector>
 
 #include <sys/stat.h>
 
@@ -73,18 +71,21 @@ public:
             std::cerr << "[Server] ERROR: Firmware file not found or empty: "
                       << filePath_ << std::endl;
             firmwareReady_ = false;
-            transferActive_ = false;
             _reply(false);
             return;
         }
 
-        fileSize_ = static_cast<uint64_t>(st.st_size);
-        currentPosition_ = 0;
-        transferActive_ = true;
-
         std::cout << "[Server] RequestDownload received" << std::endl;
-        std::cout << "[Server] Streaming file: " << filePath_ << std::endl;
-        std::cout << "[Server] Total size: " << fileSize_ << " bytes" << std::endl;
+        std::cout << "[Server] CommonAPI is control-only; image transfer is done by SCP" << std::endl;
+        std::cout << "[Server] Update file ready: " << filePath_
+                  << " (" << st.st_size << " bytes)" << std::endl;
+
+        servedKey_ = currentReadyKey_;
+        saveServedState();
+        firmwareReady_ = false;
+
+        std::cout << "[Server] Firmware notification marked as served: "
+                  << servedKey_.toString() << std::endl;
 
         _reply(true);
     }
@@ -94,83 +95,14 @@ public:
                      RequestDataReply_t _reply) override
     {
         (void)_client;
+        (void)_NoOfBytes;
 
         std::lock_guard<std::mutex> lock(mutex_);
 
         v1::abdelfattah::examples::SomeIPBl::ByteArray message;
 
-        if (!transferActive_)
-        {
-            std::cout << "[Server] RequestData received but no active transfer. Sending empty array." << std::endl;
-            _reply(message);
-            return;
-        }
-
-        if (currentPosition_ >= fileSize_)
-        {
-            finishTransferLocked();
-            _reply(message);
-            return;
-        }
-
-        uint64_t remaining = fileSize_ - currentPosition_;
-        uint32_t bytesToSend = static_cast<uint32_t>(
-            std::min<uint64_t>(remaining, _NoOfBytes));
-
-        std::ifstream inputFile(filePath_, std::ios::binary);
-
-        if (!inputFile.is_open())
-        {
-            std::cerr << "[Server] ERROR: Failed to open firmware file during streaming" << std::endl;
-            transferActive_ = false;
-            firmwareReady_ = false;
-            _reply(message);
-            return;
-        }
-
-        inputFile.seekg(static_cast<std::streamoff>(currentPosition_), std::ios::beg);
-
-        if (!inputFile.good())
-        {
-            std::cerr << "[Server] ERROR: seekg failed at position "
-                      << currentPosition_ << std::endl;
-            transferActive_ = false;
-            firmwareReady_ = false;
-            _reply(message);
-            return;
-        }
-
-        message.resize(bytesToSend);
-
-        inputFile.read(reinterpret_cast<char *>(message.data()),
-                       static_cast<std::streamsize>(bytesToSend));
-
-        std::streamsize actuallyRead = inputFile.gcount();
-
-        if (actuallyRead <= 0)
-        {
-            std::cerr << "[Server] ERROR: read failed at position "
-                      << currentPosition_ << std::endl;
-            transferActive_ = false;
-            firmwareReady_ = false;
-            message.clear();
-            _reply(message);
-            return;
-        }
-
-        if (static_cast<uint32_t>(actuallyRead) < bytesToSend)
-        {
-            message.resize(static_cast<size_t>(actuallyRead));
-        }
-
-        currentPosition_ += static_cast<uint64_t>(actuallyRead);
-
-        if ((currentPosition_ % (1024 * 100)) == 0 || currentPosition_ == fileSize_)
-        {
-            std::cout << "[Server] Sent " << actuallyRead
-                      << " bytes (Position: " << currentPosition_
-                      << "/" << fileSize_ << ")" << std::endl;
-        }
+        std::cout << "[Server] RequestData is disabled in the final OTA flow. "
+                  << "Returning empty array." << std::endl;
 
         _reply(message);
     }
@@ -211,62 +143,19 @@ private:
     std::string filePath_;
     std::string statePath_;
 
-    uint64_t fileSize_ = 0;
-    uint64_t currentPosition_ = 0;
-
     std::mutex mutex_;
     std::thread monitorThread_;
 
     bool firmwareReady_ = false;
-    bool transferActive_ = false;
 
     FileKey servedKey_;
     FileKey currentReadyKey_;
-
-    FileKey pendingKey_;
-    bool pendingReady_ = false;
 
     uint64_t candidateSize_ = 0;
     long candidateMtime_ = 0;
     int stableCounter_ = 0;
 
 private:
-    void finishTransferLocked()
-    {
-        std::cout << "[Server] All data transferred! Sending completion indicator (empty array)" << std::endl;
-
-        transferActive_ = false;
-        firmwareReady_ = false;
-        currentPosition_ = 0;
-        fileSize_ = 0;
-
-        servedKey_ = currentReadyKey_;
-        saveServedState();
-
-        std::cout << "[Server] Firmware marked as served: "
-                  << servedKey_.toString() << std::endl;
-
-        if (pendingReady_)
-        {
-            if (pendingKey_ != servedKey_)
-            {
-                currentReadyKey_ = pendingKey_;
-                firmwareReady_ = true;
-                pendingReady_ = false;
-
-                std::cout << "[Server] Pending new firmware is now ready: "
-                          << currentReadyKey_.toString() << std::endl;
-
-                fireFirmwareAvailableEvent(static_cast<uint32_t>(currentReadyKey_.size),
-                                           currentReadyKey_.checksum);
-            }
-            else
-            {
-                pendingReady_ = false;
-            }
-        }
-    }
-
     void checkForStableNewFile()
     {
         struct stat st;
@@ -325,20 +214,8 @@ private:
             return;
         }
 
-        if (transferActive_)
-        {
-            pendingKey_ = newKey;
-            pendingReady_ = true;
-
-            std::cout << "[Server] New file detected while transfer is active. Marked as pending: "
-                      << pendingKey_.toString() << std::endl;
-            return;
-        }
-
         currentReadyKey_ = newKey;
         firmwareReady_ = true;
-        currentPosition_ = 0;
-        fileSize_ = size;
 
         std::cout << "[Server] File change detected and stable." << std::endl;
         std::cout << "[Server] Current key: " << currentReadyKey_.toString() << std::endl;

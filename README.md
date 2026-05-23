@@ -14,6 +14,8 @@ unstable for 1.5 GB images.
 
 ## Final Architecture
 
+![](assets/images/arch.png)
+
 ```text
 PC Qt App
   -> TCP: UUID, SIZE, SHA256, rootfs.ext4
@@ -42,7 +44,16 @@ Static demo addresses:
 | ----- | ----- |
 | QNX | `192.168.50.1`  |
 | Linux/RPi3 | `192.168.50.2`  |
+
+
+
 ## Final Working Flow
+![](assets/images/1.png)
+
+![](assets/images/2.png)
+
+![](assets/images/3.png)
+
 1. PC Qt App sends `UUID` , `SIZE` , `SHA256` , and `rootfs.ext4`  to QNX over TCP.
 2. QNX Receiver verifies SHA-256 and stores:
     - `/tmp/rootfs/rootfs.ext4` 
@@ -76,6 +87,7 @@ Boot files:
 On Linux/RPi3 before sending the image:
 
 ```sh
+
 systemctl stop ota-apply.service
 systemctl restart someip-client.service
 journalctl -u someip-client.service -f

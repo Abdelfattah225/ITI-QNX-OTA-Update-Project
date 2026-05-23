@@ -13,6 +13,7 @@ with SCP/SSH because CommonAPI `RequestData` chunk transfer was too slow and
 unstable for 1.5 GB images.
 
 ## Final Architecture
+
 ```text
 PC Qt App
   -> TCP: UUID, SIZE, SHA256, rootfs.ext4
@@ -70,6 +71,7 @@ Boot files:
 /boot/cmdline_B.txt -> root=/dev/mmcblk0p3
 /boot/cmdline.txt   -> Raspberry Pi active boot file
 ```
+
 ## Quick Demo Commands
 On Linux/RPi3 before sending the image:
 

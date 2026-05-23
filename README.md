@@ -137,6 +137,7 @@ method, but the final Linux client does not call it.
 `RequestData`  artifacts after regenerating CommonAPI code.
 
 
+# Architecute & Flow
 ![QNX OTA Update Project: OTA Update](undefined "QNX OTA Update Project: OTA Update")
 
 
